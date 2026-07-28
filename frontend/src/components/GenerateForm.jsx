@@ -42,8 +42,19 @@ export default function GenerateForm({
   onManageVoices,
 }) {
   const { t } = useI18n();
-  const [form, setForm] = useState(DEFAULTS);
+  // The speech language is a sticky preference: restore the last-used value.
+  const [form, setForm] = useState(() => {
+    const saved = localStorage.getItem("speechLang");
+    return {
+      ...DEFAULTS,
+      language: SPEECH_LANGS.includes(saved) ? saved : DEFAULTS.language,
+    };
+  });
   const taRef = useRef(null);
+
+  useEffect(() => {
+    localStorage.setItem("speechLang", form.language);
+  }, [form.language]);
 
   // Default the persona selection to the first available voice; also reset it
   // when the list no longer contains it (e.g. after a data folder switch).

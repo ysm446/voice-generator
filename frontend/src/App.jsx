@@ -3,6 +3,7 @@ import { api } from "./api.js";
 import GenerateForm from "./components/GenerateForm.jsx";
 import PersonaManager from "./components/PersonaManager.jsx";
 import ResultCard from "./components/ResultCard.jsx";
+import StatusBar from "./components/StatusBar.jsx";
 import { useI18n, LANGS } from "./i18n.jsx";
 
 export default function App() {
@@ -211,6 +212,8 @@ export default function App() {
           onChanged={refreshVoices}
         />
       )}
+
+      <StatusBar />
     </div>
   );
 }

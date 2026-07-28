@@ -966,6 +966,10 @@ button.primary:disabled {
   color: var(--accent);
   font-size: 12px;
 }
+.progress-elapsed {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
 .spinner {
   width: 14px;
   height: 14px;

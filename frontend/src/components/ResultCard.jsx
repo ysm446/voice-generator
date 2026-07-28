@@ -49,12 +49,32 @@ const CopyIcon = () => (
   </svg>
 );
 
+function fmtElapsed(sec) {
+  if (sec < 60) return `${Math.floor(sec)}s`;
+  const m = Math.floor(sec / 60);
+  const s = Math.floor(sec % 60);
+  return `${m}:${String(s).padStart(2, "0")}`;
+}
+
 export default function ResultCard({ job, onDelete, onCopyToForm }) {
   const { t, lang } = useI18n();
   const [open, setOpen] = useState(false);
+  // Ticks once a second while generating so the elapsed counter moves.
+  const [now, setNow] = useState(() => Date.now());
   const menuRef = useRef(null);
 
+  useEffect(() => {
+    if (job.status !== "running") return;
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [job.status]);
+
   const statusLabel = (s) => (STATUS_KEY[s] ? t(STATUS_KEY[s]) : s);
+
+  const runningElapsed =
+    job.status === "running" && job.started_at
+      ? Math.max(0, now / 1000 - job.started_at)
+      : null;
 
   const elapsed =
     job.finished_at && job.started_at
@@ -113,6 +133,9 @@ export default function ResultCard({ job, onDelete, onCopyToForm }) {
             <div className="progress">
               <div className="spinner" />
               <span>{job.message || statusLabel(job.status)}</span>
+              {runningElapsed !== null && (
+                <span className="progress-elapsed">{fmtElapsed(runningElapsed)}</span>
+              )}
             </div>
           )}
 

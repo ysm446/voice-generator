@@ -45,10 +45,12 @@ export default function GenerateForm({
   const [form, setForm] = useState(DEFAULTS);
   const taRef = useRef(null);
 
-  // Default the persona selection to the first available voice.
+  // Default the persona selection to the first available voice; also reset it
+  // when the list no longer contains it (e.g. after a data folder switch).
   useEffect(() => {
-    if (!form.voice_name && voices.length > 0) {
-      setForm((f) => (f.voice_name ? f : { ...f, voice_name: voices[0].name }));
+    if (voices.length === 0) return;
+    if (!form.voice_name || !voices.some((v) => v.name === form.voice_name)) {
+      setForm((f) => ({ ...f, voice_name: voices[0].name }));
     }
   }, [voices, form.voice_name]);
 

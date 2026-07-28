@@ -1,8 +1,12 @@
 """Persona (voice profile) management.
 
-A persona is a directory under persona/<name>/ containing:
+A persona is a directory under <data dir>/persona/<name>/ containing:
   ref.wav    - reference audio for voice cloning
   info.yaml  - transcript / language / speech-style profile (see voice-persona)
+
+Personas live inside the (switchable) data folder, so pointing the app at
+another data folder also switches the persona library. The server injects the
+current data folder via `configure()`.
 """
 from __future__ import annotations
 
@@ -15,7 +19,18 @@ import soundfile as sf
 import yaml
 
 ROOT = Path(__file__).resolve().parent.parent
-PERSONA_DIR = ROOT / "persona"
+
+_data_dir_getter = lambda: ROOT / "data"  # noqa: E731 — overridden by server
+
+
+def configure(getter):
+    """Install a callable returning the current data folder."""
+    global _data_dir_getter
+    _data_dir_getter = getter
+
+
+def persona_dir() -> Path:
+    return Path(_data_dir_getter()) / "persona"
 
 # transcript/language drive TTS; the rest feed the LLM dialogue writer.
 INFO_FIELDS = (
@@ -51,7 +66,7 @@ def _validate_name(name: str) -> str:
 
 
 def _read_info(name: str) -> dict:
-    info_path = PERSONA_DIR / name / "info.yaml"
+    info_path = persona_dir() / name / "info.yaml"
     if not info_path.exists():
         return {}
     try:
@@ -64,10 +79,11 @@ def _read_info(name: str) -> dict:
 
 def list_voices() -> list[dict]:
     """Personas that have a reference audio, sorted by name."""
-    if not PERSONA_DIR.exists():
+    base = persona_dir()
+    if not base.exists():
         return []
     voices = []
-    for d in sorted(PERSONA_DIR.iterdir()):
+    for d in sorted(base.iterdir()):
         if not d.is_dir() or not (d / "ref.wav").exists():
             continue
         info = _read_info(d.name)
@@ -78,7 +94,7 @@ def list_voices() -> list[dict]:
 def get(name: str) -> dict:
     """Full persona info for the editor UI."""
     name = _validate_name(name)
-    d = PERSONA_DIR / name
+    d = persona_dir() / name
     if not d.is_dir():
         raise ValueError(f"persona '{name}' not found")
     info = _read_info(name)
@@ -92,7 +108,7 @@ def get(name: str) -> dict:
 def save(name: str, fields: dict, audio: tuple[np.ndarray, int] | None = None) -> dict:
     """Create or update a persona. `audio` replaces ref.wav when given."""
     name = _validate_name(name)
-    d = PERSONA_DIR / name
+    d = persona_dir() / name
     d.mkdir(parents=True, exist_ok=True)
 
     if audio is not None:
@@ -113,7 +129,7 @@ def save(name: str, fields: dict, audio: tuple[np.ndarray, int] | None = None) -
 
 def delete(name: str):
     name = _validate_name(name)
-    d = PERSONA_DIR / name
+    d = persona_dir() / name
     if not d.is_dir():
         raise ValueError(f"persona '{name}' not found")
     shutil.rmtree(d)
@@ -121,12 +137,12 @@ def delete(name: str):
 
 def ref_audio_path(name: str) -> Path:
     name = _validate_name(name)
-    return PERSONA_DIR / name / "ref.wav"
+    return persona_dir() / name / "ref.wav"
 
 
 def load(name: str) -> dict:
     """Full persona data for generation. Raises ValueError if unusable."""
-    ref_path = PERSONA_DIR / name / "ref.wav"
+    ref_path = persona_dir() / name / "ref.wav"
     if not ref_path.exists():
         raise ValueError(f"persona '{name}' not found (no ref.wav)")
     info = _read_info(name)

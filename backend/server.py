@@ -18,6 +18,7 @@ import argparse
 import io
 import json
 import queue
+import shutil
 import tempfile
 import threading
 import time
@@ -99,6 +100,22 @@ DATA_DIR = _init_data_dir()
 def jobs_file() -> Path:
     # Follows the (switchable) data folder, hence a function.
     return DATA_DIR / "jobs.json"
+
+
+# Personas live inside the (switchable) data folder; late-bound so a data
+# folder switch is picked up immediately.
+personas.configure(lambda: DATA_DIR)
+
+# One-time layout migration: personas used to live at <project>/persona.
+# They belong to the data, so move them into the default data folder.
+_LEGACY_PERSONA_DIR = ROOT / "persona"
+if _LEGACY_PERSONA_DIR.is_dir() and not (DEFAULT_DATA_DIR / "persona").exists():
+    try:
+        DEFAULT_DATA_DIR.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(_LEGACY_PERSONA_DIR), str(DEFAULT_DATA_DIR / "persona"))
+        print(f"[personas] moved {_LEGACY_PERSONA_DIR} -> {DEFAULT_DATA_DIR / 'persona'}")
+    except OSError as exc:
+        print(f"[personas] legacy migration failed: {exc}")
 
 
 app = FastAPI(title="voice-generator backend")

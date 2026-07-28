@@ -1,7 +1,7 @@
 # plan — 実装方針と優先順位
 
 作成日時: 2026-07-28 10:17
-更新日時: 2026-07-28 17:23
+更新日時: 2026-07-28 17:36
 
 ## アーキテクチャ
 
@@ -117,6 +117,7 @@ class Job:
 
 ### Phase 6 — 磨き込み
 - キャンセル機構(生成中ジョブの中断)、進捗表示の改善。
+- 長文対応: 文・段落単位の自動分割 → 連続生成 → 連結 WAV(検討記録は docs/design/voice-guide.md の 3.7 参照。Phase 5 の LLM 整形と組み合わせると効果大)。
 - VRAM 管理: TTS(bf16 約5GB)+ Gemma4 Q4_K_M(約8GB)+ ASR の同時常駐は VRAM を圧迫するため、エンジン単位の load/unload UI(sound-effect-generator の EngineToggle 方式)を整備。
 - 同一話者の連続生成高速化(`voice_clone_prompt` の再利用)。
 - i18n(en/ja)、F12 スクリーンショット、配布方式の検討。

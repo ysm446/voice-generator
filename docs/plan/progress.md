@@ -1,7 +1,7 @@
 # progress — 進捗と注意点
 
 作成日時: 2026-07-28 10:17
-更新日時: 2026-07-28 13:13
+更新日時: 2026-07-28 15:26
 
 ## 現在の状態
 
@@ -38,6 +38,12 @@
   - `PersonaManager.jsx`: モーダル UI(一覧・新規作成・参照音声アップロード・Whisper 文字起こしボタン・言語・キャラ設定折りたたみ・保存/削除)。クローンタブの「⚙管理」から開く。
   - テスト済み: 既存/アップロード音声の文字起こし(言語判定 Japanese 確認)、persona 新規作成→一覧反映→削除、モーダル UI 表示。
   - `server.py` 起動時に huggingface_hub の symlink 判定を無効化(実行時ダウンロードも安全に)。
+
+- 2026-07-28: **保存先フォルダの分離** — sound-effect-generator の同機能(abfb2df / 1ffdede)を移植。
+  - `/api/datadir` GET/POST。設定は `app-config.json`(コード側・gitignore 済)に保存。デフォルトは `data/`。
+  - 切替は読み替えのみ(移動・コピー・削除なし)。ジョブ実行中は 409 で拒否。起動時に設定先が使えなければ `data/` にフォールバック。
+  - UI は生成条件の上の折りたたみ行(DataDirField)。Electron IPC(`__DESKTOP__`)でネイティブフォルダ選択とエクスプローラー表示。F12/AUTO_SCREENSHOT のスクリーンショットも保存先に追従。
+  - `E:\sample files\voice-generator\sample` で確認済み: 切替→既存 jobs.json 読込(5件)→音声配信→新規生成が同フォルダに保存→既定へ復帰、すべて成功。
 
 ## 未完了(次にやること)
 

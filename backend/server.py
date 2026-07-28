@@ -38,8 +38,68 @@ import llm_engine
 import personas
 import tts_engine
 
-DATA_DIR = ROOT / "data"
-JOBS_FILE = DATA_DIR / "jobs.json"
+DEFAULT_DATA_DIR = ROOT / "data"
+
+# ---------------------------------------------------------------- app config
+# Records *where* the data folder is (plus future app-level settings), so it
+# lives next to the code — never inside the data folder it points at.
+APP_CONFIG_FILE = ROOT / "app-config.json"
+_CONFIG_LOCK = threading.Lock()
+
+
+def _read_json_dict(path: Path) -> dict:
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+APP_CONFIG = _read_json_dict(APP_CONFIG_FILE)
+
+
+def save_app_config():
+    with _CONFIG_LOCK:
+        tmp = APP_CONFIG_FILE.with_suffix(".json.tmp")
+        tmp.write_text(
+            json.dumps(APP_CONFIG, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+        os.replace(tmp, APP_CONFIG_FILE)
+
+
+def resolve_data_dir(raw: str | None) -> Path:
+    """Turn a configured/requested path into an absolute data folder path."""
+    if not raw or not str(raw).strip():
+        return DEFAULT_DATA_DIR
+    p = Path(str(raw).strip()).expanduser()
+    if not p.is_absolute():
+        p = ROOT / p
+    return Path(os.path.normpath(p))
+
+
+def _init_data_dir() -> Path:
+    """Use the configured folder, falling back to data/ if unusable.
+
+    The configured folder can live on a drive that is not present right now,
+    so a failure here must not stop the server from starting.
+    """
+    configured = resolve_data_dir(APP_CONFIG.get("data_dir"))
+    try:
+        configured.mkdir(parents=True, exist_ok=True)
+        return configured
+    except OSError as exc:
+        print(f"[data] cannot use {configured} ({exc}); falling back to default")
+        DEFAULT_DATA_DIR.mkdir(parents=True, exist_ok=True)
+        return DEFAULT_DATA_DIR
+
+
+DATA_DIR = _init_data_dir()
+
+
+def jobs_file() -> Path:
+    # Follows the (switchable) data folder, hence a function.
+    return DATA_DIR / "jobs.json"
+
 
 app = FastAPI(title="voice-generator backend")
 app.add_middleware(
@@ -81,21 +141,27 @@ def save_jobs():
     with JOBS_LOCK:
         payload = [asdict(j) for j in JOBS.values()]
     with _SAVE_LOCK:
+        target = jobs_file()
         DATA_DIR.mkdir(parents=True, exist_ok=True)
-        tmp = JOBS_FILE.with_suffix(".json.tmp")
+        tmp = target.with_suffix(".json.tmp")
         with open(tmp, "w", encoding="utf-8") as f:
             json.dump(payload, f, ensure_ascii=False, indent=1)
-        os.replace(tmp, JOBS_FILE)
+        os.replace(tmp, target)
 
 
 def load_jobs():
-    if not JOBS_FILE.exists():
-        return
-    try:
-        with open(JOBS_FILE, "r", encoding="utf-8") as f:
-            payload = json.load(f)
-    except Exception:
-        return
+    """Replace the in-memory job list with the one in the data folder."""
+    src = jobs_file()
+    payload = []
+    if src.exists():
+        try:
+            with open(src, "r", encoding="utf-8") as f:
+                payload = json.load(f)
+        except Exception:
+            payload = []
+    if not isinstance(payload, list):
+        payload = []
+    restored: dict[str, Job] = {}
     for item in payload:
         try:
             job = Job(**item)
@@ -108,7 +174,10 @@ def load_jobs():
         elif job.status in ("queued", "running"):
             job.status = "error"
             job.message = "Interrupted by app shutdown"
-        JOBS[job.id] = job
+        restored[job.id] = job
+    with JOBS_LOCK:
+        JOBS.clear()
+        JOBS.update(restored)
 
 
 # ---------------------------------------------------------------- worker
@@ -215,7 +284,61 @@ def health():
         "llm_loaded": llm_engine.loaded(),
         "llm_loading": ENGINE_LOADING["llm"],
         "queue_size": WORK_QUEUE.qsize(),
+        "data_dir": str(DATA_DIR),
     }
+
+
+def _data_dir_state() -> dict:
+    return {
+        "path": str(DATA_DIR),
+        "default": str(DEFAULT_DATA_DIR),
+        "is_default": DATA_DIR == DEFAULT_DATA_DIR,
+    }
+
+
+class DataDirRequest(BaseModel):
+    # Empty/None means "go back to the default data/ folder".
+    path: str | None = None
+
+
+@app.get("/api/datadir")
+def get_data_dir():
+    return _data_dir_state()
+
+
+@app.post("/api/datadir")
+def set_data_dir(req: DataDirRequest):
+    """Point the app at another data folder.
+
+    Nothing is moved or copied: the new folder is read as-is (its own
+    jobs.json + WAVs become the visible result list), and the old one is
+    left untouched.
+    """
+    global DATA_DIR
+    new_dir = resolve_data_dir(req.path)
+    if new_dir == DATA_DIR:
+        return _data_dir_state()
+
+    # Switching under a running/queued job would orphan its WAV in the old
+    # folder, so require an idle queue.
+    with JOBS_LOCK:
+        busy = any(j.status in ("queued", "running") for j in JOBS.values())
+    if busy:
+        raise HTTPException(409, "jobs_in_progress")
+
+    try:
+        new_dir.mkdir(parents=True, exist_ok=True)
+        probe = new_dir / ".write-test"
+        probe.write_text("", encoding="utf-8")
+        probe.unlink()
+    except OSError as exc:
+        raise HTTPException(400, f"{type(exc).__name__}: {exc}")
+
+    DATA_DIR = new_dir
+    APP_CONFIG["data_dir"] = "" if new_dir == DEFAULT_DATA_DIR else str(new_dir)
+    save_app_config()
+    load_jobs()  # show whatever the new folder already holds
+    return _data_dir_state()
 
 
 def _read_audio_upload(file_bytes: bytes) -> tuple[np.ndarray, int]:

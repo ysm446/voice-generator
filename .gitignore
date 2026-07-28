@@ -10,6 +10,9 @@ models/
 # Generated audio
 data/
 
+# App settings (machine-specific; records where the data folder is)
+app-config.json
+
 # Persona voice data (personal reference recordings)
 persona/
 

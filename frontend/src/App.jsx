@@ -16,6 +16,8 @@ export default function App() {
   // A request to load a card's settings back into the form.
   const [copyRequest, setCopyRequest] = useState(null);
   const [showPersonas, setShowPersonas] = useState(false);
+  // Where generated results are stored ({path, default, is_default}).
+  const [dataDir, setDataDir] = useState(null);
 
   // Load/unload a resident model from the top-bar toggles. We flip health
   // optimistically so the pill reacts immediately; the next poll reconciles.
@@ -64,18 +66,44 @@ export default function App() {
     }
   }, []);
 
+  const refreshDataDir = useCallback(async () => {
+    try {
+      setDataDir(await api.getDataDir());
+    } catch {
+      /* backend down; ignore */
+    }
+  }, []);
+
+  // Switch the data folder, then reload the result list from the new location.
+  const handleDataDirChange = useCallback(
+    async (path) => {
+      try {
+        setDataDir(await api.setDataDir(path));
+        setError(null);
+        await refreshJobs();
+      } catch (e) {
+        // Stored as a key so it follows the current language at render time.
+        setError(
+          e.message?.includes("jobs_in_progress") ? "dataDirBusy" : e.message
+        );
+      }
+    },
+    [refreshJobs]
+  );
+
   // Initial health check + polling loop for live job updates.
   useEffect(() => {
     api.health().then(setHealth).catch(() => setHealth(null));
     refreshJobs();
     refreshVoices();
+    refreshDataDir();
     const timer = setInterval(() => {
       refreshJobs();
       refreshVoices();
       api.health().then(setHealth).catch(() => {});
     }, 1500);
     return () => clearInterval(timer);
-  }, [refreshJobs, refreshVoices]);
+  }, [refreshJobs, refreshVoices, refreshDataDir]);
 
   const handleSubmit = async (params) => {
     try {
@@ -136,7 +164,7 @@ export default function App() {
 
       {error && (
         <div className="banner error">
-          {error === "connectError" ? t("connectError") : error}
+          {["connectError", "dataDirBusy"].includes(error) ? t(error) : error}
         </div>
       )}
 
@@ -146,6 +174,7 @@ export default function App() {
       >
         <section className="panel form-panel">
           <h2>{t("genSettings")}</h2>
+          <DataDirField info={dataDir} onChange={handleDataDirChange} />
           <GenerateForm
             onSubmit={handleSubmit}
             modes={health?.modes}
@@ -181,6 +210,89 @@ export default function App() {
           onClose={() => setShowPersonas(false)}
           onChanged={refreshVoices}
         />
+      )}
+    </div>
+  );
+}
+
+// Shows where generated results are stored and lets the user point the app at
+// another folder (keeping data separate from the app itself). The native picker
+// comes from Electron; in a plain browser we fall back to typing a path.
+// Collapsed by default (it is a set-once setting) — the folder name stays
+// visible in the header so the current location is readable at a glance.
+function DataDirField({ info, onChange }) {
+  const { t } = useI18n();
+  const [open, setOpen] = useState(
+    () => localStorage.getItem("dataDirOpen") === "1"
+  );
+
+  useEffect(() => {
+    localStorage.setItem("dataDirOpen", open ? "1" : "0");
+  }, [open]);
+
+  if (!info) return null;
+
+  const desktop = typeof window !== "undefined" ? window.__DESKTOP__ : null;
+  const folderName =
+    info.path.split(/[\\/]/).filter(Boolean).pop() || info.path;
+
+  const pick = async () => {
+    const picked = desktop
+      ? await desktop.pickFolder(info.path)
+      : window.prompt(t("dataDir"), info.path);
+    if (picked && picked !== info.path) onChange(picked);
+  };
+
+  return (
+    <div className="model-field data-dir-field">
+      <button
+        type="button"
+        className="collapse-head"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        title={t("dataDirHelp")}
+      >
+        <span className={`chevron ${open ? "open" : ""}`}>▸</span>
+        <span>{t("dataDir")}</span>
+        {!open && (
+          <span className="collapse-preview" title={info.path}>
+            {folderName}
+          </span>
+        )}
+      </button>
+      {open && (
+        <>
+          <input
+            className="path-box"
+            readOnly
+            value={info.path}
+            title={info.path}
+          />
+          <div className="data-dir-actions">
+            <button type="button" className="mini-btn" onClick={pick}>
+              {t("browse")}
+            </button>
+            {desktop && (
+              <button
+                type="button"
+                className="mini-btn"
+                onClick={() => desktop.openPath(info.path)}
+              >
+                {t("openFolder")}
+              </button>
+            )}
+            {!info.is_default && (
+              <button
+                type="button"
+                className="mini-btn"
+                onClick={() => onChange("")}
+                title={info.default}
+              >
+                {t("useDefault")}
+              </button>
+            )}
+          </div>
+        </>
       )}
     </div>
   );

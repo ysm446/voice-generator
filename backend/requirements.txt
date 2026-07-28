@@ -1,0 +1,18 @@
+# Install:
+#   python -m pip install torch==2.10.0 torchaudio==2.10.0 --index-url https://download.pytorch.org/whl/cu130
+#   python -m pip install -r requirements.txt
+#
+# ASR is Whisper (openai/whisper-large-v3-turbo) via transformers, which
+# qwen-tts already pulls in. Note: qwen-tts pins transformers==4.57.3 but
+# 4.57.6 also works (proven in voice-persona) — pip may warn.
+#
+# llama-cpp-python needs a CUDA-enabled build (no official prebuilt CUDA
+# wheel on PyPI for Windows) — reuse a locally built wheel or build with
+# CMAKE_ARGS="-DGGML_CUDA=on".
+qwen-tts
+fastapi
+uvicorn[standard]
+python-multipart
+soundfile
+PyYAML
+llama-cpp-python

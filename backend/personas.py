@@ -127,6 +127,22 @@ def save(name: str, fields: dict, audio: tuple[np.ndarray, int] | None = None) -
     return get(name)
 
 
+def rename(old: str, new: str) -> str:
+    """Rename a persona directory. Returns the new name."""
+    old = _validate_name(old)
+    new = _validate_name(new)
+    if old == new:
+        return new
+    src = persona_dir() / old
+    if not src.is_dir():
+        raise ValueError(f"persona '{old}' not found")
+    dst = persona_dir() / new
+    if dst.exists():
+        raise ValueError(f"persona '{new}' already exists")
+    src.rename(dst)
+    return new
+
+
 def delete(name: str):
     name = _validate_name(name)
     d = persona_dir() / name

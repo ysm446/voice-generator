@@ -38,7 +38,20 @@ export default function PersonaManager({ voices, onClose, onChanged }) {
   const [error, setError] = useState(null);
   // Bumped after save so the <audio> src cache-busts.
   const [audioRev, setAudioRev] = useState(0);
+  const [dragOver, setDragOver] = useState(false);
   const fileRef = useRef(null);
+
+  // While the modal is open, keep a stray drop (outside the drop zone) from
+  // making the window navigate to the file.
+  useEffect(() => {
+    const prevent = (e) => e.preventDefault();
+    window.addEventListener("dragover", prevent);
+    window.addEventListener("drop", prevent);
+    return () => {
+      window.removeEventListener("dragover", prevent);
+      window.removeEventListener("drop", prevent);
+    };
+  }, []);
 
   const selectPersona = async (name) => {
     setError(null);
@@ -96,13 +109,19 @@ export default function PersonaManager({ voices, onClose, onChanged }) {
 
   const handleSave = async () => {
     setError(null);
-    if (!form.name.trim()) return;
+    const newName = form.name.trim();
+    if (!newName) return;
     if (!selected && !audioFile) {
       setError(t("newPersonaNeedsAudio"));
       return;
     }
     const fd = new FormData();
+    // For an existing persona `name` is the current directory; a differing
+    // edited name goes in `new_name` and renames it on the server.
+    fd.append("name", selected || newName);
+    if (selected && newName !== selected) fd.append("new_name", newName);
     for (const [key, value] of Object.entries(form)) {
+      if (key === "name") continue;
       fd.append(key, value ?? "");
     }
     if (audioFile) fd.append("audio", audioFile);
@@ -174,7 +193,6 @@ export default function PersonaManager({ voices, onClose, onChanged }) {
                 type="text"
                 value={form.name}
                 onChange={update("name")}
-                disabled={!!selected}
                 placeholder="e.g. Hanako"
               />
             </label>
@@ -184,13 +202,33 @@ export default function PersonaManager({ voices, onClose, onChanged }) {
                 {t("refAudio")}
                 <span className="hint-inline">{t("refAudioHint")}</span>
               </span>
+            </label>
+            <div
+              className={`drop-zone${dragOver ? " over" : ""}`}
+              onDragOver={(e) => {
+                e.preventDefault();
+                setDragOver(true);
+              }}
+              onDragLeave={() => setDragOver(false)}
+              onDrop={(e) => {
+                e.preventDefault();
+                setDragOver(false);
+                const f = e.dataTransfer.files?.[0];
+                if (f) setAudioFile(f);
+              }}
+              onClick={() => fileRef.current?.click()}
+              role="button"
+              tabIndex={0}
+            >
+              {audioFile ? `🎵 ${audioFile.name}` : t("dropHint")}
               <input
                 ref={fileRef}
                 type="file"
                 accept="audio/*"
+                style={{ display: "none" }}
                 onChange={(e) => setAudioFile(e.target.files?.[0] ?? null)}
               />
-            </label>
+            </div>
             {selected && !audioFile && (
               <audio
                 controls

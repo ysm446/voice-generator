@@ -394,6 +394,7 @@ def get_voice(name: str):
 @app.post("/api/voices")
 async def save_voice(
     name: str = Form(...),
+    new_name: str | None = Form(None),
     transcript: str | None = Form(None),
     language: str | None = Form(None),
     speech_style: str | None = Form(None),
@@ -421,6 +422,8 @@ async def save_voice(
         "sample_lines": sample_lines,
     }
     try:
+        if new_name and new_name.strip() and new_name.strip() != name:
+            name = personas.rename(name, new_name.strip())
         saved = personas.save(name, fields, audio_data)
     except ValueError as e:
         raise HTTPException(422, str(e))

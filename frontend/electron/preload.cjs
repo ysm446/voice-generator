@@ -11,4 +11,5 @@ contextBridge.exposeInMainWorld("__API_BASE__", "http://127.0.0.1:8766");
 contextBridge.exposeInMainWorld("__DESKTOP__", {
   pickFolder: (defaultPath) => ipcRenderer.invoke("dialog:pick-folder", defaultPath),
   openPath: (target) => ipcRenderer.invoke("shell:open-path", target),
+  showItem: (target) => ipcRenderer.invoke("shell:show-item", target),
 });

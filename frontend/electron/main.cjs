@@ -151,6 +151,13 @@ function registerIpc() {
     if (err) console.error(`[shell] openPath failed: ${err}`);
     return !err;
   });
+
+  // Open Explorer with the given file pre-selected.
+  ipcMain.handle("shell:show-item", (_e, target) => {
+    if (!target) return false;
+    shell.showItemInFolder(target);
+    return true;
+  });
 }
 
 // Capture the current window content and write it to <data dir>/screenshot/ as

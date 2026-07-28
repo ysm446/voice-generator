@@ -406,6 +406,11 @@ body {
   width: 100%;
   height: 36px;
 }
+.persona-audio-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: -6px;
+}
 .drop-zone {
   border: 1.5px dashed var(--border);
   border-radius: 10px;

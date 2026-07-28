@@ -236,6 +236,21 @@ export default function PersonaManager({ voices, onClose, onChanged }) {
                 src={`${api.voiceAudioUrl(selected)}?rev=${audioRev}`}
               />
             )}
+            {selected &&
+              form.ref_path &&
+              typeof window !== "undefined" &&
+              window.__DESKTOP__ && (
+                <div className="persona-audio-actions">
+                  <button
+                    type="button"
+                    className="mini-btn"
+                    onClick={() => window.__DESKTOP__.showItem(form.ref_path)}
+                    title={form.ref_path}
+                  >
+                    📂 {t("openFileLocation")}
+                  </button>
+                </div>
+              )}
 
             <label>
               <span className="label-row">

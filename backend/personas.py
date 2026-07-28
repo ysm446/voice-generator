@@ -98,7 +98,13 @@ def get(name: str) -> dict:
     if not d.is_dir():
         raise ValueError(f"persona '{name}' not found")
     info = _read_info(name)
-    out = {"name": name, "has_audio": (d / "ref.wav").exists()}
+    ref = d / "ref.wav"
+    out = {
+        "name": name,
+        "has_audio": ref.exists(),
+        # Absolute path so the desktop shell can reveal it in Explorer.
+        "ref_path": str(ref) if ref.exists() else None,
+    }
     for field in INFO_FIELDS:
         out[field] = info.get(field) or ""
     out["language"] = info.get("language") or "Auto"

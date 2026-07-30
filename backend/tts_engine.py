@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import gc
 import json
+import os
 import threading
 from pathlib import Path
 
@@ -37,6 +38,12 @@ TTS_MODELS = {
 
 _models: dict[str, object] = {}
 _lock = threading.RLock()
+
+# Voice-clone prompts (reference codes + speaker embedding) reused across
+# consecutive generations with the same persona. Keyed on the reference audio's
+# mtime/size and the transcript, so editing the persona invalidates it.
+_prompt_cache: dict[tuple, object] = {}
+_PROMPT_CACHE_MAX = 8
 
 
 def resolve_model_id(mode: str, size: str) -> str:
@@ -128,6 +135,8 @@ def load(mode: str, size: str, progress=None):
 def unload_all():
     with _lock:
         _models.clear()
+        # The cached prompts hold small CUDA tensors; drop them with the models.
+        _prompt_cache.clear()
         gc.collect()
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
@@ -142,6 +151,43 @@ def _load_ref_audio(path: str) -> tuple[np.ndarray, int]:
     if peak > 1.0:
         data = data / peak
     return data, sr
+
+
+def _prompt_key(model_id: str, name: str, persona: dict) -> tuple | None:
+    """Cache key for a persona's voice-clone prompt (None if ref.wav is gone)."""
+    try:
+        st = os.stat(persona["ref_path"])
+    except OSError:
+        return None
+    return (
+        model_id,
+        name,
+        persona["ref_path"],
+        st.st_mtime_ns,
+        st.st_size,
+        persona["transcript"],
+    )
+
+
+def _voice_clone_prompt(model, model_id: str, name: str, persona: dict, progress=None):
+    """Reference prompt for `name`, built once and reused while unchanged."""
+    key = _prompt_key(model_id, name, persona)
+    if key is not None and key in _prompt_cache:
+        # Refresh insertion order so eviction drops the least recently used.
+        _prompt_cache[key] = _prompt_cache.pop(key)
+        return _prompt_cache[key]
+
+    if progress:
+        progress("encoding reference audio...")
+    items = model.create_voice_clone_prompt(
+        ref_audio=_load_ref_audio(persona["ref_path"]),
+        ref_text=persona["transcript"],
+    )
+    if key is not None:
+        _prompt_cache[key] = items
+        while len(_prompt_cache) > _PROMPT_CACHE_MAX:
+            _prompt_cache.pop(next(iter(_prompt_cache)))
+    return items
 
 
 def generate(
@@ -161,13 +207,15 @@ def generate(
             if language == "Auto" and persona["language"] != "Auto":
                 language = persona["language"]
             model = load(mode, model_size, progress)
+            prompt = _voice_clone_prompt(
+                model, resolve_model_id(mode, model_size), voice_name, persona, progress
+            )
             if progress:
                 progress("generating...")
             wavs, sr = model.generate_voice_clone(
                 text=text,
                 language=language,
-                ref_audio=_load_ref_audio(persona["ref_path"]),
-                ref_text=persona["transcript"],
+                voice_clone_prompt=prompt,
             )
         elif mode == "custom":
             model = load(mode, model_size, progress)

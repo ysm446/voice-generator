@@ -1,7 +1,7 @@
 # progress — 進捗と注意点
 
 作成日時: 2026-07-28 10:17
-更新日時: 2026-07-28 17:17
+更新日時: 2026-07-30 09:25
 
 ## 現在の状態
 
@@ -58,10 +58,19 @@
 - 2026-07-28: **persona 参照音声の場所を開く** — 管理画面に「ファイルの場所を開く」ボタン(IPC `shell:show-item` = `shell.showItemInFolder`)。persona 情報 API に `ref_path` を追加。
 - 2026-07-28: **ステータスバー(システムリソース)** — lm-graph から移植。Electron main で node:os(CPU差分サンプリング/RAM)+ nvidia-smi(GPU/VRAM、不在時はラッチして再クエリしない)を1秒間隔で取得し IPC `system:resources` で push。`StatusBar.jsx` が下部固定バーに表示(65%/85% で警告色)。ブラウザ実行時は非表示。動作確認済み。
 
+- 2026-07-30: **同一話者の連続生成高速化(`voice_clone_prompt` の再利用)** — Phase 6 の1項目。
+  - `tts_engine.py` に `_prompt_cache` を追加。clone 生成のたびに `create_voice_clone_prompt`(参照音声の読み込み + `speech_tokenizer.encode` + 話者埋め込み抽出)を実行していたのを、persona 単位でキャッシュして再利用するようにした。
+  - キャッシュキーは `(model_id, persona名, ref.wav のパス, mtime_ns, サイズ, transcript)`。参照音声の差し替え・文字起こしの編集・リネーム・削除はすべてキーの変化として自動で無効化される(明示的な invalidate 呼び出しは不要)。上限8件の LRU。`unload_all()` でクリア(小さな CUDA テンソルを保持するため)。
+  - **計測結果(RTX PRO 5000 / 1.7B-Base / 参照音声 20〜30秒)**:
+    - prompt 構築コストは初回 1.6秒(CUDA カーネルのウォームアップ込み)、以降 **60〜100ms**。よって定常状態での削減は1件あたり 0.06〜0.1秒。
+    - 生成時間の内訳を実測: **talker の自己回帰ループが 5.4〜6.1秒に対し、vocoder の decode は 0.08秒**。つまり生成時間はほぼ全部が talker で、prompt 再利用で削れるのは全体の1〜2%程度。
+    - → **プランが期待した高速化効果は小さかった**。冗長な処理は消えたので変更自体は妥当だが、体感速度を上げたいなら talker 側(flash-attn 未導入の警告あり / サブトーカー16量子化器の逐次ステップ)を見る必要がある。
+  - 検証: 直接呼び出しでキャッシュヒット・`ref.wav` の mtime 変更による再構築を確認。サーバー API 経由でも clone 生成2件が成功(2回目以降はプロセスをまたいだキャッシュヒット)。テストで作った WAV/ジョブは削除済み。
+
 ## 未完了(次にやること)
 
 - Phase 5: Gemma4 支援機能(セリフ生成 SSE / テキスト整形 / タイトル自動生成)← **次はここから**。llm_engine の load/unload だけ実装済み。
-- Phase 6: 磨き込み(キャンセル・VRAM 管理・配布)
+- Phase 6: 磨き込み(キャンセル・長文分割・VRAM 管理・配布)。`voice_clone_prompt` 再利用は完了。
 - メモ: qwen-asr パッケージと Qwen3-ASR モデルキャッシュ(`models/hub/models--Qwen--Qwen3-ASR-1.7B`, 約4GB)は不要になったので削除してよい。
 
 ## 環境メモ(このマシン固有)
@@ -77,4 +86,5 @@
 - **pip の依存解決**: qwen-tts(transformers==4.57.3 ピン)と qwen-asr(==4.57.6 ピン)は同時インストール不可。qwen-tts → qwen-asr の順に段階インストールする(backend/requirements.txt 冒頭に手順記載)。
 - llama-cpp-python の CUDA 対応 wheel は PyPI に無い。pip キャッシュのローカルビルド wheel(cp310)を再利用した。再構築時は `CMAKE_ARGS="-DGGML_CUDA=on"` でビルドが必要。
 - persona の language が設定されている場合、フォームで「Auto」を選ぶと persona 側の言語設定を優先する仕様(tts_engine.generate)。
+- `tts_engine._prompt_cache` の無効化は `ref.wav` の mtime/サイズと transcript に依存する。persona の更新経路を増やすときは、参照音声か transcript のどちらかが必ず変わることを確認する(内容だけ差し替えて mtime を保つような処理を書くと古い声が使われる)。
 - qwen-tts のモデルは方式(Base/CustomVoice/VoiceDesign)ごとに生成メソッドが排他。ロード済みモデルは `_models` dict に共存できる(VRAM 48GB 級のため当面問題なし)。
